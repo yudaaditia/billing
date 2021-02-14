@@ -35,6 +35,10 @@ const Billing = (props) => {
   const [antriansSearch, setAntriansSearch] = useState(false);
   const [menusSearch, setMenusSearch]       = useState([]);
   const [tempBilling, setTempBilling]       = useState([]);
+  const [billingSearch, setBillingSearch]   = useState([]);
+  const [pisahCek, setPisahCek]             = useState(false);
+  const [countPisah, setCountPisah]         = useState(0);
+  const [namaPisah, setNamaPisah]           = useState('');
 
   const uriKategori       = `${props.url.url}/kasir/api/kategori`;
   const uriFavorite       = `${props.url.url}/kasir/api/favorite`;
@@ -49,6 +53,7 @@ const Billing = (props) => {
   const uriAntrian        = `${props.url.url}/kasir/api/antrian`;
   const uriEditAntrian    = `${props.url.url}/kasir/api/editAntrian`;
   const uriRemoveAntrian  = `${props.url.url}/kasir/api/removeAntrian`;
+  const uriRemovePisah    = `${props.url.url}/kasir/api/removePisah`;
 
   useEffect(() => {
     console.log(props.url.url);
@@ -149,6 +154,14 @@ const deleteBilling = (key, jumlah) => {
   setCount(count - jumlah);
   totalCharge();
   return setBilling(bi);
+}
+
+const deleteTempBilling = (key, jumlah) => {
+  let bi = tempBilling;
+  bi.splice(key, 1);
+  setCount(count - jumlah);
+  totalTempCharge();
+  return setTempBilling(bi);
 }
 
 const totalCharge = () => {
@@ -304,6 +317,9 @@ const formatRupiah = (angka) => {
 }
 
 const antrianHandle = () => {
+  if(nama == ''){
+    return warning('Nama Harus diisi!');    
+  }
   axios.post(uriAddAntrian, { nama, billing })
   .then(response => {
     console.log('add antrian =>', response.data );    
@@ -329,7 +345,18 @@ const getAntrian = () => {
 }
 
 const antrianHandleEdit = () => {
-  axios.post(uriEditAntrian, {idAntrian, billing} )
+  console.log('billing', billing);
+  let bill = [];
+  billing.map(item => {
+    bill.push({
+      antrian_id : idAntrian,
+      menu_id    : item.id,
+      nama       : item.nama,
+      jumlah     : parseInt(item.jumlah),
+      harga      : parseInt(item.harga)   
+    })
+  })
+  axios.post(uriEditAntrian, {idAntrian, bill} )
    .then(response => {
      console.log('uriEditAntrian =>', response.data);
      clearBilling();
@@ -351,7 +378,21 @@ const onChangeSearchAntrian = (value) => {
   }
 }
 
+const onChangeSearchBilling = (value) => {
+  if(value.length > 0){
+    let bill = billing.filter(item => {
+      return item.nama.toLowerCase().match(value.toLowerCase());
+    })
+    setBillingSearch(bill);      
+  } else {
+    setBillingSearch([]);    
+  }
+}
+
 const deleteAntrian = (id) => {
+  if(!id){
+    return;
+  }
  axios.post(uriRemoveAntrian, {id} )
  .then(response => {
    console.log('RemoveAntrian =>', response.data);
@@ -396,16 +437,27 @@ const formatWaktu = () => {
 }
 
 const pilihAntrianHandle = (item) => {
+  setTempBilling([]);
   let ant = _.cloneDeep(antrians);
   let bil = ant.filter(ite => ite.nama == item.nama);
+  let bill = _.cloneDeep(bil[0].detail_antrian);
+  let temp = [];
+  bill.map(it => {
+    temp.push({
+      id: it.menu_id,
+      nama: it.nama,
+      jumlah:it.jumlah,
+      harga:it.harga
+    })
+  })
 
-  console.log('billing => ', bil[0].detail_antrian);
+  console.log('billing => ', temp);
   setIdAntrian(item.id);
-  setBilling(bil[0].detail_antrian);
+  setBilling(temp);
   setNama(item.nama);
   setEditAntrian(true);
   console.log('id => ',idAntrian);
-  totalChargeAntrianEdit(bil[0].detail_antrian);
+  totalChargeAntrianEdit(temp);
 }
 
 const antrianBaruHandle = () => {
@@ -415,6 +467,10 @@ const antrianBaruHandle = () => {
 
 const clearBilling = () => {
   setNama('');
+  setNamaPisah('');
+  setIdAntrian('');
+  setEditAntrian(false);
+  setPisahCek(false);
   setBilling([]);
   setTempBilling([]);
   setCount(0);
@@ -468,6 +524,7 @@ const chargeHandle = () => {
   console.log('panjang', billing.length)
   console.log('isi', billing)
   let billings = [];
+  let name = '';
   
 
   if(!aktivitas.open){
@@ -476,62 +533,50 @@ const chargeHandle = () => {
     warning('Toko Belum Buka!');
     return;
   }
-
-  if(editAntrian) {
+  // cek jika ada yang dipisah
+  if(pisahCek){
     if(tempBilling.length == 0 && tempBilling.length < 1){
       warning('Pilih Pesanan!');
+      console.log('pisah')
       return;
     }
+    // jika tempBilling tidak kosong maka setbilling dengan tempbilling untuk kirim ke api
+    
   } else if(billing.length == 0 && billing.length < 1){
     warning('Pilih Pesanan!');
     return;
   }
 
     console.log('jalan');
-
+    if(pisahCek){
+      billings = tempBilling;
+      name = namaPisah;
+    } else {
+      billings = billing;
+      name = nama;
+    }
     let pes = {
         aktivitas_id: aktivitas.id,
-        nama: nama,
+        nama: name,
         diskon: diskon,
         tunai: tunai
     };
-
-    axios.post(uriPesanan, { pes })
+    let aktivitas_id = aktivitas.id;
+    
+    axios.post(uriPesanan, { pes, billings, aktivitas_id })
       .then(res => {
-        console.log(res);
         console.log(res.data);
-        if(editAntrian){
-          tempBilling.map(item => {
-            billings.push({
-                pesanan_id  : res.data.id,
-                menu_id     : item.id,
-                aktivitas_id: aktivitas.id,
-                jumlah      : item.jumlah,
-                harga       : item.harga             
-            })
-          })
+        window.open("struk", "_blank");
+        success();
+        if(pisahCek){
+          deleteAntrianPisah();
         } else {
-          billing.map(item => {
-            billings.push({
-                pesanan_id  : res.data.id,
-                menu_id     : item.id,
-                aktivitas_id: aktivitas.id,
-                jumlah      : item.jumlah,
-                harga       : item.harga             
-            })
-          })
+          deleteAntrian(idAntrian);
         }
-        axios.post(uriDetailPesanan, { billings })
-        .then(res => {
-          console.log(res);
-          console.log(res.data);
-          window.open("struk", "_blank");
-          success();
-          deleteAntrianCharge();
-          onChangeTunaiHandle('');
-          clearBilling();
-        })
-
+        onChangeTunaiHandle('');
+        setEditAntrian(false);
+        setPisahCek(false);
+        clearBilling();
       }) 
       .catch(error => {
           danger();
@@ -577,6 +622,115 @@ const onChangeSearch = async (value) => {
   }
 }
 
+const pilihPisah = (it, target) => {
+  setNamaPisah(nama + ' - terpisah');
+  onChangeSearchBilling('');
+  setBillingSearch([]);  
+  setCountPisah(countPisah + 1);
+  let item  = _.cloneDeep(it);
+  let found = false;
+  console.log('tempBilling', tempBilling);
+  if (tempBilling) {
+    tempBilling.map((menu, index) =>{
+      if(menu.id == item.id){
+        found = true;
+        let bi = tempBilling;
+        bi.splice(index, 1);
+        setTempBilling(bi);
+      }
+    })    
+    if(found){
+      return;
+    }
+  }  
+  let billings = [];
+  item.jumlah = 1;
+  billings = _.cloneDeep(tempBilling);
+  billings.push(item);
+  setTempBilling(billings);
+}
+// tambah kurang pesanan
+const actionTempBilling = (item, action) => { 
+  let max = false;
+  // jika jumlah item sudah sama dengan pesanan billing sebelumnya maka return;
+  tempBilling.map(temp => {
+    if(item.id == temp.id){
+      if(temp.jumlah === item.jumlah && action)
+      {    
+        console.log('max');
+        return max = true;
+      }  
+    }
+  })
+  if(max){
+    return;
+  }
+  let menu  = _.cloneDeep(item);
+  setCountPisah(countPisah + 1);
+  let bi
+  bi = _.cloneDeep(tempBilling);
+  bi.map((bill, key) => {
+    if(bill.id === menu.id)
+      {     
+          if(action)
+          {
+            bill.jumlah += 1;
+            return; 
+          } else {
+            bill.jumlah -= 1;
+            // jika 0 hapus
+            if(bill.jumlah == 0)
+            {
+              bill.jumlah += 1;
+            }
+            return ;
+          }
+      }       
+  });
+  setTempBilling(bi);
+}
+
+const totalTempCharge = () => {
+  let sub = 0;
+  for (var i = 0; i < tempBilling.length; i++) {
+    sub += parseInt(tempBilling[i].harga)  * parseInt(tempBilling[i].jumlah);  
+  }
+  setSubTotal(parseInt(sub));
+  let disks = (diskon / 100) * sub;
+  setDisk(parseInt(disk));
+  console.log('diskon =>', disks);
+  console.log('subtotal =>', subTotal);
+  setTotal(sub - disks);
+  setKembali(parseInt((sub - disks) - tunai));
+  setCount(count);      
+}
+
+const deleteAntrianPisah = () => {
+  setIdAntrian('');
+  axios.post(uriRemovePisah, { idAntrian, tempBilling } )
+   .then(response => {
+     console.log('Remove Antrian Pisah =>', response.data);
+     
+   })
+   .catch(function (error) {
+     danger();
+     console.log(error);
+   })
+}
+
+const foundPisah = (id) => {
+  let found =false;
+  tempBilling.map(item => {
+    if(item.id === id){
+      return found = true;
+    }
+  })
+  if(found){
+    return true;
+  } else {
+    return false;
+  }
+}
 
 return (
 <div className="row">
@@ -607,7 +761,7 @@ return (
 
         <div className=" py-2 pl-5 bg-white shadow mt-2 kategori-group">
           <div className="row">
-            <div className="mx-auto pointer item-kategori">          
+            <div className="mx-auto pointer item-kategori active-kategori">          
               <h5 onClick={() => favoriteHandle()} className="text-center my-auto mr-5">FAVORITE</h5>                           
             </div>
             {kategoris.map((item) => 
@@ -645,13 +799,10 @@ return (
           </div>
         </div>
     </div>
-
-
-
     <div className="col-sm-4 pl-0">   
       <div className="shadow container-fluid bg-white overflow-auto" style={{height: '100vh', backgroundColor:' #ecf0f1'}}>
 
-        <div className="modal fade bd-example-modal-sm" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true">
+        <div className="modal fade bd-example-modal-sm" tabindex="-1" role="dialog" aria-labelledby="mySmallModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false" tabindex="-1" >
           <div className="modal-dialog modal-sm">
             <div className="modal-content">
              <div className="modal-header">
@@ -676,7 +827,7 @@ return (
           <div className="modal-dialog modal-lg">
             <div className="modal-content">
               <div className="modal-header">
-                <h5 className="modal-title" id="exampleModalLongTitle">Daftar Antrian {countAntrian}</h5>
+                <h5 className="modal-title" id="exampleModalLongTitle">Daftar Antrian</h5>
                 
                 <div className="row">
                     <form className="app-search pl-3 mx-auto">
@@ -722,15 +873,98 @@ return (
               </div>
             </div>
           </div>
-        </div>   
-
-        <div className="row p-4 align-middle mb-4">
+        </div>    
+        <div className="modal fade pisah-antrian" tabindex="-1" role="dialog" aria-labelledby="myLargeModalLabel" aria-hidden="true" data-backdrop="static" data-keyboard="false" tabindex="-1" >
+          <div className="modal-dialog modal-lg">
+            <div className="modal-content">
+              <div className="modal-header">
+                <h5 className="modal-title" id="exampleModalLongTitle">Pisah Pembayaran <p className="invisible">{countPisah}</p></h5>
+                
+                <div className="row">
+                    <form className="app-search pl-3 mx-auto">
+                      <input type="text" className="form-control" placeholder="Cari..." onChange={(e) => onChangeSearchBilling(e.target.value)}/> <a
+                                className="srh-btn"><i className="ti-search"></i></a>
+                    </form>
+                </div>
+                <button type="button" onClick={() => {setPisahCek(false); setTempBilling([]); setNamaPisah('')}} className="btn btn-warning text-white" data-dismiss="modal">
+                  Tidak Jadi
+                </button>
+                <button type="button" onClick={() => {totalTempCharge();  setPisahCek(true)}} className="btn default-color text-white" data-dismiss="modal">
+                  Pisah
+                </button>
+              </div>
+              <div className="modal-body">                                                              
+                <table className="table mt-3">
+                  <thead>
+                    <tr>
+                      <th scope="col">Menu</th>
+                      <th scope="col">Jumlah</th>
+                      <th scope="col"></th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                      {
+                        billingSearch.length > 0 ?
+                        billingSearch.map((item, key) => 
+                      <tr>
+                        <td onClick={(e) => pilihPisah(item, e)} >{item.nama}</td>
+                        <td>{item.jumlah}</td>
+                        <td className="row justify-content-between mr-3">
+                          <span className="mr-1 badge badge-danger text-white font-weight-bold" onClick={() => actionTempBilling(item, false)}>-</span>  {tempBilling.length > 0 ? 'x ' : '-'}
+                          { 
+                            tempBilling.map(pisah => {
+                              if(pisah.id === item.id){
+                                return (pisah.jumlah ?? 1)
+                              }
+                            })
+                          } <span className="text-white ml-1 badge badge-success  font-weight-bold" onClick={(e) => actionTempBilling(item, true)}>+</span>                
+                        </td>
+                      </tr>
+                          )
+                        : 
+                        billing.map((item, key) =>                           
+                      <tr key={key} className={ foundPisah(item.id) ? 'active-pisah' : '' }>
+                        <td className="item-billing" onClick={() => pilihPisah(item)} >{item.nama}</td>
+                        <td>{item.jumlah}</td>
+                        <td className="row justify-content-between mr-3">
+                          <span className="mr-1 badge badge-danger text-white font-weight-bold" onClick={() => actionTempBilling(item, false)}>-</span>  {tempBilling.length > 0 ? 'x ' : '-'}
+                          { 
+                            tempBilling.map(pisah => {
+                              if(pisah.id === item.id){
+                                return (pisah.jumlah ?? 1)
+                              }
+                            })
+                          } <span className="text-white ml-1 badge badge-success  font-weight-bold" onClick={(e) => actionTempBilling(item, true)}>+</span>                
+                        </td>
+                      </tr>
+                        )
+                      }
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div className="row p-4 align-middle mb-4 justify-content-between">
+          <div className="row">
              <button onClick={() => getAntrian()} type="button" className="default-color px-2 py-1 btn shadow rounded mr-3"  data-toggle="modal" data-target=".bd-example-modal-lg"><i className="ti-menu ti-close font-weight-bold text-white"></i></button>
             <h4 className="text-center my-auto">Pesanan</h4>
+          </div>
+
+          
+          {
+            editAntrian ?
+          <div>
+            <button type="button" className="default-color px-2 py-1 btn shadow rounded mr-3"  data-toggle="modal" data-target=".pisah-antrian"><i className="fas fa-hand-scissors font-weight-bold text-white"></i></button>
+          </div>
+            : 
+          <div></div>
+          }            
+          
         </div>
         <div className="d-flex justify-content-around">
           <p className="font-weight-bold"  style={{fontSize: '16px'}}>
-            {nama ?? ''}
+            {namaPisah ?? nama ?? ''}
           </p>
           <p className="font-weight-bold d-none" >{count ? `${count} Pesanan` : ''}</p>
         </div>
@@ -741,6 +975,21 @@ return (
 
 
           {
+            tempBilling.length > 0 ?
+            tempBilling.map((item, key) => 
+            <tr className="p-0" key={key}>
+              <td className="p-0 pb-2 pr-2">{item.nama}</td>
+              <td className="p-0 pb-2 row justify-content-between mr-3">
+                <span className="px-2 mr-1 badge badge-danger text-white font-weight-bold" onClick={() => actionTempBilling(item, false)}>-</span> x {item.jumlah} <span className="text-white ml-1 badge badge-success px-2 font-weight-bold" onClick={() => actionTempBilling(item, true)}>+</span>                
+              </td>
+              <td className="p-0 pb-2 ">
+                    <div className="row mr-1 justify-content-between">
+                    <div className="text-left">Rp {formatRupiah(item.harga)}</div>
+                    <span className="ml-1 px-2 badge badge-danger text-white font-weight-bold text-right" onClick={() => deleteTempBilling(key, item.jumlah)}>X</span>
+                    </div>                                      
+              </td>
+            </tr>) 
+            :
             billing.map((item, key) => 
             <tr className="p-0" key={key}>
               <td className="p-0 pb-2 pr-2">{item.nama}</td>
@@ -820,10 +1069,7 @@ return (
               <button type="button" className="btn btn-danger ml-3" onClick={() => questionChargeHandle()}>Bayar</button>
           </div>
         </div>
-      </div>
-
-
-      
+      </div>  
     </div>
 
 </div>
@@ -842,3 +1088,10 @@ $(document).ready(function() {
     $('#myInput').trigger('focus');
   });
 });
+
+$(document).on('click', '.item-kategori', function(){
+  $(this).addClass('active-kategori').siblings().removeClass('active-kategori')
+})
+$(document).on('click', '.item-billing', function(){
+  $(this).parent().toggleClass('active-pisah')
+})
